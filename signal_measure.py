@@ -6,7 +6,7 @@ import healpy as hp
 import numpy as np
 
 
-def generate_inmaskcat(mask, pos_src, out_edge, tol=1):
+def generate_inmaskcat(mask, pos_src_all, out_edge, tol=1):
 
     '''
     Return unmasked sources.
@@ -19,12 +19,12 @@ def generate_inmaskcat(mask, pos_src, out_edge, tol=1):
     '''
 
     Ns = hp.npix2nside(mask.size)
-    Nsource = pos_src.shape[0]
+    Nsource = pos_src_all.shape[0]
     inmask_ind = np.zeros(Nsource)
     for i in range(Nsource):
         if i % 10000 == 0:
             print i
-        list_out = hp.query_disc(Ns, pos_src[i], np.radians(out_edge / 60.))
+        list_out = hp.query_disc(Ns, pos_src_all[i], np.radians(out_edge / 60.))
         npix_out = list_out.size
         neff_out = np.sum(mask[list_out])
 
@@ -91,7 +91,7 @@ def get_bkg(skymap, mask, list_out_unmasked, list_in_unmasked):
 
 
 def get_totalsignal(skymap, mask, pos_src_all, out_edge, in_edge, signal_edge=15,
-                  tol=1):
+                    tol=1):
 
     '''
     Return integrated signal signal in a disk around a collection of sources
@@ -128,7 +128,7 @@ def get_totalsignal(skymap, mask, pos_src_all, out_edge, in_edge, signal_edge=15
 
 
 def get_centralsignal(skymap, mask, pos_src_all, out_edge, in_edge, fwhm,
-                    tol=1):
+                      tol=1):
 
     '''
     Return central signal of a collection of sources which is calculated by
@@ -161,11 +161,19 @@ def get_centralsignal(skymap, mask, pos_src_all, out_edge, in_edge, fwhm,
             fraction = fraction_next
         list_out_unmasked, list_in_unmasked = get_disk(mask, pos_src_all[i], out_edge,
                                                        in_edge, tol)
+        if np.asarray(list_out_unmasked) is np.array([0]):
+            tot_signal[i] = 0
+            continue
+
         bkg = get_bkg(skymap, mask, list_out_unmasked, list_in_unmasked)
         pos_src_ind = hp.vec2pix(Ns, pos_src_all[i][0], pos_src_all[i][1],
                                  pos_src_all[i][2])
         tot_signal[i] = ((skymap_masked)[pos_src_ind]-bkg)
     tot_signal *= (sigma * np.sqrt(2*np.pi))
+    N_inmask = np.nonzero(tot_signal)[0].size
+    print("Number of Objects (in mask): ", N_inmask)
+    print("Used " + str(N_inmask/float(Nsource) * 100) + '%')
+
     return tot_signal
 
 
@@ -236,6 +244,7 @@ def get_1d_profile(skymap, mask, pos_src, rbins, out_edge, in_edge, tol=1):
     signal2, xedges = np.histogram(rtheta, bins=rbins, weights=pureT_1d**2)
     std = (signal2 * npix - signal**2) ** 0.5 / npix
     signal = signal / npix
+    signal[npix==0] = 0.0
     return r_center, signal, std, npix
 
 
@@ -303,7 +312,7 @@ def stack_1d_profile(skymap, mask, pos_src_all, rbins, out_edge, in_edge,
     '''
 
     Nsource = pos_src_all.shape[0]
-    N_inmask = pos_src_all.shape[0]
+    N_inmask = generate_inmaskcat(mask, pos_src_all, out_edge, tol).sum()
     nbins = rbins.size - 1
     profile_all = np.zeros((Nsource, nbins))
     std_all = np.zeros((Nsource, nbins))
@@ -320,12 +329,10 @@ def stack_1d_profile(skymap, mask, pos_src_all, rbins, out_edge, in_edge,
             print(int(i*100 / np.float(Nsource))), '%'
             fraction = fraction_next
         r_center, profile_all[i], std_all[i], \
-            npix_all[i] = get_1d_profile(skymap, mask,
-                                         pos_src_all[i],
-                                         rbins, out_edge,
-                                         in_edge, tol=1)
-        if npix_all[i].sum() == 0:
-            N_inmask = N_inmask - 1
+        npix_all[i] = get_1d_profile(skymap, mask,
+                                     pos_src_all[i],
+                                     rbins, out_edge,
+                                     in_edge, tol)
         hit_all[i] = (npix_all[i] > 0)
         std_weight[i] = 1 / std_all[i]
         std_weight[i][np.where(npix_all[i] == 0)[0]] = 0
