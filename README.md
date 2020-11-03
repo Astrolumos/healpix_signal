@@ -1,2 +1,2 @@
 # healpix_signal
-Measure signals on a masked healpix map at a given source catalog.
+Measure and stack profiles (density, temperature, shear, etc) on a masked healpix map around a given source.
